@@ -118,6 +118,38 @@ const btnEventDeleteEntry = () => {
   }
 };
 
+const btnEventAddEntry = async () => {
+  const input = document.getElementById('inpAddEntry');
+  const newSiteId = input.value.trim();
+
+  if (!newSiteId) {
+    alert('No site ID entered');
+    return;
+  }
+
+  if (SITE_DATA[newSiteId]) {
+    alert(`Entry for "${newSiteId}" already exists`);
+    return;
+  }
+
+  const obj = {};
+  obj[newSiteId] = { style: '', enabled: false };
+
+  const success = await setStorageData(obj);
+  if (success) {
+    SITE_DATA[newSiteId] = obj[newSiteId];
+    input.value = '';
+
+    // add to list, without reloading
+    const ulSiteList = document.getElementById('siteList');
+    const li = document.createElement('li');
+    li.appendChild(document.createTextNode(newSiteId));
+    li.setAttribute('id', newSiteId);
+    li.addEventListener('click', listEventEditSiteStyles);
+    ulSiteList.appendChild(li);
+  }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   const btnDelete = document.getElementById('btnDelete');
   btnDelete.addEventListener('click', btnEventDeleteEntry);
@@ -130,6 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnDone = document.getElementById('btnDone');
   btnDone.addEventListener('click', btnEventDoneEditing);
+
+  const btnAddEntry = document.getElementById('btnAddEntry');
+  btnAddEntry.addEventListener('click', btnEventAddEntry)
 
   initializePage();
 });

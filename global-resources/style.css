@@ -60,6 +60,14 @@ button.neutral:hover {
   background: #474749;
 }
 
+input {
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 1rem;
+
+  border-radius: 8px;
+}
+
 .hidden {
   display: none;
 }
