@@ -4,35 +4,65 @@ const debug = (msg) => {
 
 const getStorageData = (domainKey) => browser.storage.sync.get(domainKey);
 
-const getTabUrl = (tab) => new URL(tab.url).hostname;
+const getTabUrl = (tab) => {
+  try {
+    return new URL(tab.url).hostname;
+  } catch {
+    return null;
+  }
+};
 
-const toggleCSS = (tabId, enabled, style) => {
-  if (enabled) {
-    browser.tabs.insertCSS(tabId, { code: style });
-  } else {
-    browser.tabs.removeCSS(tabId, { code: style });
+// insertCSS does not exist in V3, injecting style element instead.
+const STYLE_ELEMENT_ID = 'css-override-injected-style';
+
+const toggleCSS = async (tabId, enabled, style) => {
+  try {
+    if (enabled) {
+      await browser.scripting.executeScript({
+        target: { tabId },
+        func: (css, elementId) => {
+          let el = document.getElementById(elementId);
+          if (!el) {
+            el = document.createElement('style');
+            el.id = elementId;
+            document.head.appendChild(el);
+          }
+          el.textContent = css;
+        },
+        args: [style, STYLE_ELEMENT_ID],
+      });
+    } else {
+      await browser.scripting.executeScript({
+        target: { tabId },
+        func: (elementId) => {
+          const el = document.getElementById(elementId);
+          if (el) el.remove();
+        },
+        args: [STYLE_ELEMENT_ID],
+      });
+    }
+  } catch (err) {
+    debug(`toggleCSS error on tab ${tabId}: ${err.message}`);
   }
 };
 
 const setTabStyle = (id, url) => {
+  if (!url) return;
   getStorageData(url).then((tabData) => {
     debug(JSON.stringify(tabData));
     if (tabData[url]) {
-      const { enabled } = tabData[url];
-      toggleCSS(id, enabled, tabData[url].style);
+      const { enabled, style } = tabData[url];
+      toggleCSS(id, enabled, style);
     }
   });
 };
 
 const initializeTabStyles = () => {
-  const getAllTabs = browser.tabs.query({});
-  getAllTabs.then((tabs) => {
-  /* eslint-disable no-restricted-syntax */
+  browser.tabs.query({}).then((tabs) => {
     for (const tab of tabs) {
       const tabUrl = getTabUrl(tab);
-      setTabStyle(tab.id, tabUrl);
+      if (tabUrl) setTabStyle(tab.id, tabUrl);
     }
-  /* eslint-enable no-restricted-syntax */
   });
 };
 
@@ -42,27 +72,22 @@ const reloadTab = (tab) => {
 };
 
 const tabStyleChanged = (urlToUpdate) => {
-  const getAllTabs = browser.tabs.query({});
-  getAllTabs.then((tabs) => {
-    /* eslint-disable no-restricted-syntax */
+  browser.tabs.query({}).then((tabs) => {
     for (const tab of tabs) {
       const tabUrl = getTabUrl(tab);
       if (tabUrl === urlToUpdate) {
         browser.tabs.reload(tab.id);
       }
     }
-    /* eslint-enable no-restricted-syntax */
   });
 };
 
-// Listen for actions passed from popup window
 const eventListener = (request, sender, sendResponse) => {
   debug(`Event listener action ${request.action}`);
   if (request.action === 'reloadTab') {
     reloadTab(request.tab);
     sendResponse({ response: true });
   } else if (request.action === 'updateStyle') {
-    // if styles for a url changed - update all its tabs
     tabStyleChanged(request.tabUrl);
   }
 };
@@ -73,8 +98,9 @@ const initializeExtension = () => {
 
   browser.runtime.onMessage.addListener(eventListener);
   browser.tabs.onUpdated.addListener((id, changeInfo, tab) => {
-    // Re apply styles if tab is updated (refresh)
-    reloadTab({ id, url: getTabUrl(tab) });
+    if (changeInfo.status === 'complete') {
+      reloadTab({ id, url: getTabUrl(tab) });
+    }
   });
 };
 
